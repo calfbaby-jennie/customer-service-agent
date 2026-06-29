@@ -1,45 +1,73 @@
-# src/database/connection.py
 import os
 from pathlib import Path
+from urllib.parse import urlparse
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-# Mac 本地开发推荐：把数据库放在项目目录下
-DB_DIR = Path.home() / ".local/share/customer-service-agent"
-DB_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = DB_DIR / "app.db"
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):  # type: ignore[no-redef]
+        return False
 
-# SQLite 连接字符串
-DATABASE_URL = f"sqlite:///{DB_PATH}"
 
-print(f"✓ Database path: {DB_PATH}")
+load_dotenv()
 
-# SQLAlchemy 引擎配置（Mac SQLite 优化）
+
+def _default_sqlite_url() -> str:
+    db_dir = Path.home() / ".local/share/customer-service-agent"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{db_dir / 'app.db'}"
+
+
+def _ensure_sqlite_parent(database_url: str) -> None:
+    if not database_url.startswith("sqlite:///"):
+        return
+
+    raw_path = database_url.replace("sqlite:///", "", 1)
+    if raw_path in {":memory:", ""}:
+        return
+
+    db_path = Path(raw_path)
+    if not db_path.is_absolute():
+        db_path = Path.cwd() / db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+DATABASE_URL = os.getenv("DATABASE_URL") or _default_sqlite_url()
+_ensure_sqlite_parent(DATABASE_URL)
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    echo=False,  # 改为 True 查看 SQL 语句
+    connect_args=connect_args,
+    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
 )
 
-# Session 工厂
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
     bind=engine,
 )
 
-# SQLite 优化选项（for Mac）
-def configure_sqlite_optimizations():
-    """Mac SQLite 性能优化"""
+
+def configure_sqlite_optimizations() -> None:
+    """Apply SQLite optimizations only when using SQLite."""
+    if not urlparse(DATABASE_URL).scheme.startswith("sqlite"):
+        return
+
     with engine.connect() as conn:
-        conn.execute(text("PRAGMA journal_mode = WAL"))       # 写入优化
-        conn.execute(text("PRAGMA synchronous = NORMAL"))     # 平衡速度与安全
-        conn.execute(text("PRAGMA cache_size = -64000"))      # 64MB 缓存
-        conn.execute(text("PRAGMA foreign_keys = ON"))        # 外键约束
+        conn.execute(text("PRAGMA journal_mode = WAL"))
+        conn.execute(text("PRAGMA synchronous = NORMAL"))
+        conn.execute(text("PRAGMA cache_size = -64000"))
+        conn.execute(text("PRAGMA foreign_keys = ON"))
         conn.commit()
 
+
 def get_db():
-    """FastAPI 依赖注入"""
+    """FastAPI dependency injection."""
     db = SessionLocal()
     try:
         yield db

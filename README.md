@@ -1,163 +1,82 @@
-# Customer Service Agent - 智能客服系统
+# Customer Service Agent - 智能客服 Agent 系统
 
-一个基于多 Agent 协作的企业级智能客服系统。通过 LangGraph、FastAPI 和 LLM 的结合，实现工单的智能分类、处理和评估。
+面向电商退货/售后工单的多 Agent 协作系统。项目采用 Supervisor + Policy + Action + Critic 四层架构，默认接入 DeepSeek API，并保留 OpenAI 与 Claude 的扩展能力。
 
 ## 核心特性
 
-- **多 Agent 架构**：Supervisor + Policy + Action + Critic 四层设计
-- **灵活的 LLM 支持**：支持 OpenAI、Claude、本地 Ollama 等多种模型切换
-- **Mac 本地开发友好**：SQLite + 最佳实践配置
-- **快速 MVP 验证**：最小化的代码框架，快速上手
-- **企业级扩展性**：代码结构支持后续升级到生产环境
+- **四层 Agent 架构**：Supervisor 负责意图理解与路由，Policy 负责任务分解，Action 负责工具编排与建议生成，Critic 负责质量评估与最终决策
+- **DeepSeek 优先**：默认使用 `deepseek/deepseek-chat`，通过 LiteLLM 统一调用
+- **多模型扩展**：OpenAI / Claude 配置已保留在 `src/models/llm_provider.py` 中，默认注释
+- **状态机编排**：安装 LangGraph 后自动使用 StateGraph；未安装依赖时可用顺序 fallback 做本地 smoke test
+- **企业集成占位**：提供 CRM、订单、知识库、工单系统的本地 mock adapter，后续可替换为 Salesforce、ERP/Oracle、Elasticsearch、Jira
+- **本地开发友好**：支持 SQLite，`DATABASE_URL` 可从 `.env` 配置
 
 ## 快速开始
 
-### 1. 克隆/复制项目
-
-```bash
-git clone <your-repo>
-cd customer-service-agent
-```
-
-### 2. 创建虚拟环境
+### 1. 创建虚拟环境
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. 安装依赖
+### 2. 安装依赖
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-### 4. 配置环境变量
+### 3. 配置环境变量
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入你的 OPENAI_API_KEY
 ```
 
-### 5. 初始化数据库
+编辑 `.env`，填入 DeepSeek 配置：
 
 ```bash
+DEFAULT_LLM=deepseek
+DEEPSEEK_API_KEY=sk-your-deepseek-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DATABASE_URL=sqlite:///./data/app.db
+```
+
+### 4. 初始化数据库
+
+两种方式都支持：
+
+```bash
+python -m src.database.init_db
+# 或
 python src/database/init_db.py
 ```
 
-### 6. 启动应用
+### 5. 启动 API
 
 ```bash
 python -m uvicorn src.api.main:app --reload
 ```
 
-打开 http://localhost:8000/ui
+打开：
 
-### 7. 本地测试（不启动服务器）
+- API health check: http://localhost:8000/health
+- 简易 UI: http://localhost:8000/ui
+
+### 6. 本地测试
+
+使用真实 DeepSeek：
 
 ```bash
 python test_local.py
 ```
 
-## 项目结构
+不触网 smoke test：
 
-```
-customer-service-agent/
-├── .env.example              # 环境变量示例
-├── .gitignore
-├── README.md
-├── requirements.txt
-├── test_local.py             # 本地测试脚本
-│
-├── src/
-│   ├── __init__.py
-│   │
-│   ├── models/               # 数据模型和 LLM 提供者
-│   │   ├── __init__.py
-│   │   ├── llm_provider.py   # LLM 抽象层（支持多模型切换）
-│   │   └── schemas.py        # Pydantic 数据模型
-│   │
-│   ├── database/             # 数据库配置和模型
-│   │   ├── __init__.py
-│   │   ├── connection.py     # Mac SQLite 连接管理
-│   │   ├── models.py         # SQLAlchemy ORM 模型
-│   │   └── init_db.py        # 数据库初始化脚本
-│   │
-│   ├── agents/               # 四个 Agent 的实现
-│   │   ├── __init__.py
-│   │   ├── supervisor.py     # 工单分类与路由
-│   │   ├── policy.py         # 工作流规划
-│   │   ├── action.py         # 执行决策生成建议
-│   │   ├── critic.py         # 质量评估
-│   │   └── executor.py       # 整合执行引擎
-│   │
-│   ├── tools/                # 工具集成
-│   │   ├── __init__.py
-│   │   ├── order_system.py   # 订单系统集成
-│   │   ├── knowledge_base.py # 知识库查询
-│   │   └── registry.py       # 工具注册表
-│   │
-│   ├── api/                  # FastAPI 应用
-│   │   ├── __init__.py
-│   │   ├── routes.py         # API 路由
-│   │   └── main.py           # 应用入口
-│   │
-│   └── utils/                # 工具函数
-│       ├── __init__.py
-│       └── config.py         # 配置管理
-│
-├── templates/                # Web UI
-│   └── index.html
-│
-└── tests/
-    └── test_agents.py        # 单元测试
+```bash
+DEFAULT_LLM=mock python test_local.py
 ```
 
-## 核心概念
-
-### 四个 Agent
-
-1. **Supervisor Agent**：理解工单内容，进行分类和路由
-2. **Policy Agent**：任务分解，制定处理工作流
-3. **Action Agent**：执行具体操作，生成处理建议
-4. **Critic Agent**：评估建议质量，决策是否自动发送
-
-### LLM 灵活支持
-
-支持多种 LLM 模型，随时切换：
-
-```python
-from src.models.llm_provider import get_llm_provider
-
-# 切换到 GPT-4
-llm = get_llm_provider("gpt4")
-
-# 切换到本地 Ollama
-llm = get_llm_provider("ollama_llama")
-
-# 切换到 Claude
-llm = get_llm_provider("claude")
-```
-
-### 数据库
-
-- Mac 本地开发：SQLite（自动存储在 `~/.local/share/customer-service-agent/`）
-- 支持后期升级到 PostgreSQL
-- SQLAlchemy ORM，易于扩展
-
-## API 端点
-
-```
-POST   /tickets              # 处理工单
-GET    /tickets/{id}         # 查询工单详情
-GET    /stats                # 获取统计信息
-GET    /health               # 健康检查
-GET    /ui                   # Web 界面
-```
-
-## 使用示例
-
-### 通过 API 提交工单
+## API 示例
 
 ```bash
 curl -X POST http://localhost:8000/tickets \
@@ -169,90 +88,71 @@ curl -X POST http://localhost:8000/tickets \
   }'
 ```
 
-### 本地 Python 测试
+## 项目结构
 
-```python
-import asyncio
-from src.agents.executor import run_agent_pipeline
-
-async def test():
-    state = await run_agent_pipeline(
-        ticket_id="TEST-001",
-        ticket_content="我想退货"
-    )
-    print(f"分类：{state['classification']}")
-    print(f"评分：{state['eval_score']}")
-    print(f"决策：{state['final_action']}")
-
-asyncio.run(test())
+```text
+customer-service-agent/
+├── .env.example
+├── README.md
+├── requirements.txt
+├── test_local.py
+└── src/
+    ├── agents/
+    │   ├── supervisor.py
+    │   ├── policy.py
+    │   ├── action.py
+    │   ├── critic.py
+    │   └── executor.py
+    ├── api/
+    │   ├── main.py
+    │   └── routes.py
+    ├── database/
+    │   ├── connection.py
+    │   ├── init_db.py
+    │   └── models.py
+    ├── models/
+    │   ├── llm_provider.py
+    │   └── schemas.py
+    └── tools/
+        ├── crm.py
+        ├── order_system.py
+        ├── knowledge_base.py
+        ├── ticket_system.py
+        └── registry.py
 ```
 
-## 配置说明
+## LLM 配置
 
-### .env 变量
-
-- `OPENAI_API_KEY`: OpenAI API 密钥
-- `ANTHROPIC_API_KEY`: Claude API 密钥
-- `DEFAULT_LLM`: 默认使用的 LLM 模型
-- `DATABASE_URL`: 数据库连接字符串
-- `DEBUG`: 调试模式
-- `LOG_LEVEL`: 日志级别
-
-### LLM 模型选择
-
-在 `src/models/llm_provider.py` 中配置：
+当前默认：
 
 ```python
-LLM_CONFIGS = {
-    "gpt4": LLMConfig(provider="openai", model="gpt-4"),
-    "gpt35": LLMConfig(provider="openai", model="gpt-3.5-turbo"),
-    "ollama_llama": LLMConfig(provider="ollama", model="llama2"),
-    "claude": LLMConfig(provider="claude", model="claude-3-sonnet"),
-}
+"deepseek": LLMConfig(
+    provider="deepseek",
+    model="deepseek-chat",
+    api_key_env="DEEPSEEK_API_KEY",
+    base_url_env="DEEPSEEK_BASE_URL",
+)
 ```
 
-## 常见问题
-
-### Q: 如何使用本地 Ollama？
-
-A: 首先安装 Ollama，然后：
+OpenAI / Claude 配置保留在同一文件中，默认注释；需要切换时取消注释并设置 `.env`：
 
 ```bash
-ollama run llama2
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+DEFAULT_LLM=gpt4o_mini
+# 或 DEFAULT_LLM=claude_sonnet
 ```
 
-在代码中切换：
+## 决策分层
 
-```python
-llm = get_llm_provider("ollama_llama")
-```
+- `auto_send`：Critic 评分 >= 85 且允许自动发送
+- `human_confirm`：评分 >= 60，或非退货/售后工单转人工确认
+- `reject`：评分低于 60，或建议生成失败
 
-### Q: 如何连接真实的订单系统？
+## 后续生产化方向
 
-A: 编辑 `src/tools/order_system.py`，实现真实的数据库查询或 API 调用。
-
-### Q: 如何添加新的工具？
-
-A: 在 `src/tools/` 目录下创建新文件，然后在 `registry.py` 中注册。
-
-## 后续扩展
-
-### 升级到生产环境
-
-1. 数据库从 SQLite 升级到 PostgreSQL
-2. 添加 Langfuse 可观测性集成
-3. 部署到 Kubernetes
-4. 添加企业级认证（SSO/LDAP）
-5. 实现混合 LLM 路由（敏感数据本地，非敏感数据云端）
-
-### 支持更多工单类型
-
-编辑各个 Agent 的提示词，或添加新的工单分类逻辑。
-
-## 许可证
-
-MIT
-
-## 联系方式
-
-有问题？提交 Issue 或 PR。
+- 将 `src/tools/` 下 mock adapter 替换为 Salesforce、ERP/Oracle、Elasticsearch、Jira 的真实客户端
+- 接入 Langfuse + OpenTelemetry，把 `execution_logs` 扩展为 Trace、成本、延迟指标
+- 接入 DeepEval，把 Critic 评分沉淀为离线评估集与微调数据
+- 数据库从 SQLite 切换 PostgreSQL，并补充 Alembic migration
+- 增加鉴权、审计日志、字段级加密与敏感数据本地模型路由

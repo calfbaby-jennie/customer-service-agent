@@ -1,45 +1,52 @@
-# src/agents/action.py
 """
-Action Agent：执行决策生成建议
+Action Agent: tool orchestration and response recommendation.
 """
 from ..models.llm_provider import get_llm_provider
 from ..models.schemas import AgentState
+from ..tools.registry import call_tool
 
-llm = get_llm_provider("gpt35")
 
 def execute(state: AgentState) -> AgentState:
-    """
-    第三步：基于规划生成具体的处理建议
-    """
-    if state['final_action'] == "skip":
+    """Generate a concrete customer-service recommendation."""
+    if state["classification"] != "退货":
         return state
-    
+
     prompt = f"""
-    工单内容：{state['ticket_content']}
-    
-    订单数据：{state.get('order_data', {})}
-    
-    政策信息：{state.get('policy_info', '')}
-    
-    请生成一个处理建议，包括：
-    1. 是否批准退货
-    2. 退款金额
-    3. 需要客户做什么
-    4. 我们会做什么
-    
-    尽可能友好和专业。
-    """
-    
-    recommendation = llm.call(prompt)
-    state['recommendation'] = recommendation
-    
-    print(f"[Action] 建议已生成")
+工单内容：{state['ticket_content']}
+
+客户信息：{state.get('customer_data', {})}
+
+订单数据：{state.get('order_data', {})}
+
+政策信息：{state.get('policy_info', '')}
+
+Policy Agent 规划：{state.get('policy_plan', {})}
+
+请生成一个处理建议，包括：
+1. 是否批准退货/退款
+2. 退款金额或补偿方案
+3. 需要客户补充什么
+4. 平台下一步动作
+5. 风险提示或需要人工确认的点
+
+语气需要友好、专业、可直接给客服使用。
+"""
+
+    recommendation = get_llm_provider().call(prompt)
+    state["recommendation"] = recommendation
+
+    ticket_update = call_tool("jira.ticket_update", state["ticket_id"], state.get("final_action"))
+
+    print("[Action] 建议已生成")
     print(f"建议内容：{recommendation[:100]}...")
-    
-    state['execution_logs'].append({
-        'agent': 'action',
-        'action': '生成建议',
-        'result': recommendation,
-    })
-    
+
+    state["execution_logs"].append(
+        {
+            "agent": "action",
+            "action": "工具编排与建议生成",
+            "result": recommendation,
+            "ticket_update": ticket_update,
+        }
+    )
+
     return state
